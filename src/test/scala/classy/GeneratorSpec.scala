@@ -22,7 +22,7 @@ class GeneratorSpec extends FlatSpec {
                 |""".stripMargin.parse[Source].get
 
   it should "generate classy lenses for case classes" in {
-    Generator.generateOptics(input)
+    println(Generator.generateOptics(input))
   }
 
 }
