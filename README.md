@@ -2,6 +2,10 @@
 
 Generates classy lenses using scala.meta.
 
+## How to install
+
+The plugin is not published yet.
+
 ## How to use
 
 Enable the plugin. In build.sbt:
@@ -72,3 +76,10 @@ style". Here is a great talk that explains in more detail (in Haskell): [Next
 Level MTL - George Wilson](https://www.youtube.com/watch?v=GZPup5Iuaqw).
 
 For related work in Scala, see [meow-mtl](https://github.com/oleg-py/meow-mtl).
+
+## TODO
+
+* Generate `HasFoo` type class instances for case classes with parameters of type
+`Foo`
+* Generate classy prisms
+* Write some proper tests
