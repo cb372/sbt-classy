@@ -5,17 +5,17 @@ import scala.meta.contrib.AssociatedComments
 
 object Generator {
 
-  def generateOptics(tree: Source): List[Source] = {
-    val comments = AssociatedComments(tree)
+  case class GeneratedFile(path: String, source: Source)
 
-    val pkg = tree.collect { case p @ Pkg(ref, stats) => ref }
+  def generateOptics(inputSource: Source): List[GeneratedFile] = {
+    val comments = AssociatedComments(inputSource)
+
+    val pkg = inputSource.collect { case p @ Pkg(ref, stats) => ref }
       .headOption
       .getOrElse(Term.Name("classy"))
 
-    tree.collect {
+    inputSource.collect {
       case c @ Defn.Class(mods, name, tparams, ctor, templ) if mods.exists(isCase) && hasDirective(comments.leading(c)) =>
-        println(s"Found case class $name with generate-classy-lenses directive")
-
         val typeclassName = Type.Name(s"Has${name.value}")
         val mainLensMethodName = Term.Name(name.value.head.toLower + name.value.tail) // lowercase the first char of the case class name
         val mainLensReturnType = t"Lens[T, $name]"
@@ -33,10 +33,12 @@ object Generator {
         val typeclassInstanceType = t"$typeclassName[$name]"
         val typeclassInstanceInit = init"$typeclassInstanceType()"
 
-        source"""
-           import monocle.Lens
+        // TODO also add instances for any other case classes in this file that have this type as a field
 
-           package $pkg {
+        val generatedSource = source"""
+          package $pkg {
+
+            import monocle.Lens
 
             trait $typeclassName[T] {
               def $mainLensMethodName: $mainLensReturnType
@@ -44,13 +46,19 @@ object Generator {
             }
 
             object ${Term.Name(typeclassName.value)} {
+              def apply[T](implicit instance: $typeclassName[T]): $typeclassName[T] = instance
+
               implicit val id: $typeclassInstanceType = new $typeclassInstanceInit {
-                def $mainLensMethodName: Lens[$name, $name] = Lens.id[$name, $name]
+                def $mainLensMethodName: Lens[$name, $name] = Lens.id[$name]
               }
             }
 
-           }
+          }
          """
+
+        val path = pkg.toString.replaceAllLiterally(".", "/") + "/" + s"${typeclassName.value}.scala"
+
+        GeneratedFile(path, generatedSource)
     }
   }
 

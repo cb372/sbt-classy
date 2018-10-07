@@ -23,6 +23,7 @@ class GeneratorSpec extends FlatSpec {
 
   it should "generate classy lenses for case classes" in {
     println(Generator.generateOptics(input))
+    // TODO assert something!
   }
 
 }
