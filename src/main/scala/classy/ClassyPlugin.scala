@@ -2,6 +2,8 @@ package classy
 
 import sbt._
 import sbt.Keys._
+import sbt.util.Tracked
+import sjsonnew.BasicJsonProtocol._
 import java.io.File
 import java.nio.file._
 import scala.meta._
@@ -12,16 +14,41 @@ object ClassyPlugin extends AutoPlugin {
 
   }
 
-  // TODO cache using Tracking.inputChanged, outputChanged
-
   override lazy val projectSettings = Seq(
-    sourceGenerators in Compile += Def.task {
-      val outputDirectory = (sourceManaged in Compile).value / "classy-lenses"
-      generate((unmanagedSources in Compile).value, outputDirectory, baseDirectory.value, streams.value.log)
-    }.taskValue
+    sourceGenerators in Compile += sourceGenTask.taskValue
   )
 
-  def generate(sources: Seq[File], outputDirectory: File, baseDirectory: File, log: Logger): Seq[File] = {
+  def sourceGenTask = Def.task {
+    val strs = streams.value
+    val cacheDir = strs.cacheDirectory
+    val log = strs.log
+    val outputDirectory = (sourceManaged in Compile).value / "classy-lenses"
+
+    /*
+     * Caching to avoid unnecessary work:
+     * - if the list of unmanaged sources has changed, run the source generator and cache its output
+     *   (i.e. the list of generated files)
+     * - else do nothing except return the cached output of the previous run
+     */
+    val gen: List[File] => List[File] =
+      Tracked.inputChanged(cacheDir / "unmanaged-sources") { (inChanged: Boolean, unmanagedSrcs: List[File]) =>
+        val f: Boolean => List[File] =
+          Tracked.lastOutput(cacheDir / "classy-generated-sources") { (inChanged: Boolean, prevOutput: Option[List[File]]) =>
+            def execute = generate(unmanagedSrcs, outputDirectory, baseDirectory.value, log)
+            if (inChanged) {
+              execute
+            } else {
+              prevOutput.getOrElse(execute)
+            }
+          }
+
+        f(inChanged)
+      }
+
+    gen((unmanagedSources in Compile).value.toList)
+  }
+
+  def generate(sources: List[File], outputDirectory: File, baseDirectory: File, log: Logger): List[File] = {
     sources.flatMap { sourceFile =>
       val path = sourceFile.toPath
       val bytes = Files.readAllBytes(path)
