@@ -15,9 +15,6 @@ object Generator {
       .getOrElse(Term.Name("classy"))
 
     inputSource.collect {
-      case c @ Defn.Class(mods, name, tparams, ctor, templ) if mods.exists(isCase) && hasDirective(comments.leading(c)) && isPrivate(ctor) =>
-        warn(s"Cannot generate classy lenses for case class ${c.name.value} because its primary constructor is private")
-        None
       case c @ Defn.Class(mods, name, tparams, ctor, templ) if mods.exists(isCase) && hasDirective(comments.leading(c)) && tparams.nonEmpty =>
         warn(s"Cannot generate classy lenses for case class ${c.name.value} because it is generic and that makes my head hurt")
         None
@@ -26,13 +23,14 @@ object Generator {
         val mainLensMethodName = Term.Name(name.value.head.toLower + name.value.tail) // lowercase the first char of the case class name
         val mainLensReturnType = t"Lens[T, $name]"
 
-        val fieldLenses = ctor.paramss.flatten.map { param =>
-          val fieldName = Term.Name(param.name.value)
-          val fieldType = param.decltpe.get
-          val methodName = Term.Name(s"$mainLensMethodName${fieldName.value.head.toUpper + fieldName.value.tail}")
-          val returnType = t"Lens[T, $fieldType]"
-          val fieldLens = q"Lens[$name, $fieldType](_.$fieldName)(x => a => a.copy($fieldName = x))"
-          q"def $methodName: $returnType = $mainLensMethodName composeLens $fieldLens"
+        val fieldLenses = ctor.paramss.flatten.collect {
+          case param if !param.mods.exists(isPrivate) =>
+            val fieldName = Term.Name(param.name.value)
+            val fieldType = param.decltpe.get
+            val methodName = Term.Name(s"$mainLensMethodName${fieldName.value.head.toUpper + fieldName.value.tail}")
+            val returnType = t"Lens[T, $fieldType]"
+            val fieldLens = q"Lens[$name, $fieldType](_.$fieldName)(x => a => a.copy($fieldName = x))"
+            q"def $methodName: $returnType = $mainLensMethodName composeLens $fieldLens"
         }
 
         val typeclassInstanceType = t"$typeclassName[$name]"
@@ -76,8 +74,6 @@ object Generator {
     case mod"private" => true
     case _ => false
   }
-
-  private def isPrivate(ctor: Ctor.Primary): Boolean = ctor.mods.exists(isPrivate)
 
   private def hasDirective(leadingComments: Set[Token.Comment]): Boolean =
     leadingComments.exists(_.value.contains("generate-classy-lenses"))

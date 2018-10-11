@@ -6,25 +6,25 @@ import scala.meta.contrib._
 
 class GeneratorSpec extends FlatSpec {
 
-  private val input = """package foo
-                        |
-                        |case class Config(
-                        |  dbConfig: DbConfig,
-                        |  apiConfig: ApiConfig
-                        |)
-                        |
-                        |/*
-                        | * generate-classy-lenses
-                        | */
-                        |case class DbConfig(host: String, port: Int)
-                        |
-                        |// generate-classy-lenses
-                        |case class ApiConfig(url: String, apikey: String)
-                        |""".stripMargin.parse[Source].get
-
   private val warn: String => Unit = _ => ()
 
   it should "generate classy lenses for case classes" in {
+    val input = """package foo
+                  |
+                  |case class Config(
+                  |  dbConfig: DbConfig,
+                  |  apiConfig: ApiConfig
+                  |)
+                  |
+                  |/*
+                  | * generate-classy-lenses
+                  | */
+                  |case class DbConfig(host: String, port: Int)
+                  |
+                  |// generate-classy-lenses
+                  |case class ApiConfig(url: String, apikey: String)
+                  |""".stripMargin.parse[Source].get
+
     val generatedFiles = Generator.generateOptics(warn)(input).sortBy(_.path)
     generatedFiles.foreach(println)
 
@@ -87,4 +87,37 @@ class GeneratorSpec extends FlatSpec {
       """))
   }
 
+  it should "not generate lenses for a case class's private fields" in {
+    val input = """package foo.bar
+                  |
+                  |// generate-classy-lenses
+                  |case class Hello(world: String, private val moon: String)
+                  |""".stripMargin.parse[Source].get
+
+    val generatedFiles = Generator.generateOptics(warn)(input).sortBy(_.path)
+
+    assert(generatedFiles(0).path == "foo/bar/HasHello.scala")
+    assert(generatedFiles(0).source.isEqual(
+      source"""
+              package foo.bar
+
+              import monocle.Lens
+
+              trait HasHello[T] {
+                def hello: Lens[T, Hello]
+                def helloWorld: Lens[T, String] =
+                  hello composeLens Lens[Hello, String](_.world)(x => a => a.copy(world = x))
+              }
+
+              object HasHello {
+                def apply[T](implicit instance: HasHello[T]): HasHello[T] = instance
+
+                implicit val id: HasHello[Hello] = new HasHello[Hello]() {
+                  def hello: Lens[Hello, Hello] = Lens.id[Hello]
+                }
+              }
+      """))
+  }
+
 }
+
