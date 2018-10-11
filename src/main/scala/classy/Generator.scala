@@ -7,7 +7,7 @@ object Generator {
 
   case class GeneratedFile(path: String, source: Source)
 
-  def generateOptics(inputSource: Source): List[GeneratedFile] = {
+  def generateOptics(warn: String => Unit)(inputSource: Source): List[GeneratedFile] = {
     val comments = AssociatedComments(inputSource)
 
     val pkg = inputSource.collect { case p @ Pkg(ref, stats) => ref }
@@ -15,12 +15,17 @@ object Generator {
       .getOrElse(Term.Name("classy"))
 
     inputSource.collect {
+      case c @ Defn.Class(mods, name, tparams, ctor, templ) if mods.exists(isCase) && hasDirective(comments.leading(c)) && isPrivate(ctor) =>
+        warn(s"Cannot generate classy lenses for case class ${c.name.value} because its primary constructor is private")
+        None
+      case c @ Defn.Class(mods, name, tparams, ctor, templ) if mods.exists(isCase) && hasDirective(comments.leading(c)) && tparams.nonEmpty =>
+        warn(s"Cannot generate classy lenses for case class ${c.name.value} because it is generic and that makes my head hurt")
+        None
       case c @ Defn.Class(mods, name, tparams, ctor, templ) if mods.exists(isCase) && hasDirective(comments.leading(c)) =>
         val typeclassName = Type.Name(s"Has${name.value}")
         val mainLensMethodName = Term.Name(name.value.head.toLower + name.value.tail) // lowercase the first char of the case class name
         val mainLensReturnType = t"Lens[T, $name]"
 
-        // TODO handle private ctors
         val fieldLenses = ctor.paramss.flatten.map { param =>
           val fieldName = Term.Name(param.name.value)
           val fieldType = param.decltpe.get
@@ -58,14 +63,21 @@ object Generator {
 
         val path = pkg.toString.replaceAllLiterally(".", "/") + "/" + s"${typeclassName.value}.scala"
 
-        GeneratedFile(path, generatedSource)
-    }
+        Some(GeneratedFile(path, generatedSource))
+    }.flatten
   }
 
-  private def isCase(mod: Mod) = mod match {
+  private def isCase(mod: Mod): Boolean = mod match {
     case mod"case" => true
     case _ => false
   }
+
+  private def isPrivate(mod: Mod): Boolean = mod match {
+    case mod"private" => true
+    case _ => false
+  }
+
+  private def isPrivate(ctor: Ctor.Primary): Boolean = ctor.mods.exists(isPrivate)
 
   private def hasDirective(leadingComments: Set[Token.Comment]): Boolean =
     leadingComments.exists(_.value.contains("generate-classy-lenses"))

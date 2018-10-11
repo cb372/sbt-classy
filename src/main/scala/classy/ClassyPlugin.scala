@@ -67,7 +67,7 @@ object ClassyPlugin extends AutoPlugin {
 
       input.parse[Source] match {
         case Parsed.Success(source) =>
-          val generatedFiles = Generator.generateOptics(source)
+          val generatedFiles = Generator.generateOptics(msg => log.warn(msg))(source)
           generatedFiles.map { gen =>
             log.info(s"sbt-classy: Writing generated file ${gen.path}")
             val outputFile = new File(outputDirectory, gen.path)
