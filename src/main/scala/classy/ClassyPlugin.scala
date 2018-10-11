@@ -26,24 +26,34 @@ object ClassyPlugin extends AutoPlugin {
 
     /*
      * Caching to avoid unnecessary work:
-     * - if the list of unmanaged sources has changed, run the source generator and cache its output
-     *   (i.e. the list of generated files)
-     * - else do nothing except return the cached output of the previous run
+     *
+     * if the maximum last-modified timestamp of the unmanaged source files has changed:
+     *   run the source generator and cache its output (i.e. the list of generated files)
+     * else:
+     *   do nothing except return the cached output of the previous run
      */
-    val gen: List[File] => List[File] =
-      Tracked.inputChanged(cacheDir / "unmanaged-sources") { (inChanged: Boolean, unmanagedSrcs: List[File]) =>
-        val f: Boolean => List[File] =
-          Tracked.lastOutput(cacheDir / "classy-generated-sources") { (inChanged: Boolean, prevOutput: Option[List[File]]) =>
-            def execute = generate(unmanagedSrcs, outputDirectory, baseDirectory.value, log)
-            if (inChanged) {
-              execute
-            } else {
-              prevOutput.getOrElse(execute)
-            }
-          }
+    def gen(unmanagedSrcs: List[File]): List[File] = {
+      def execute = generate(unmanagedSrcs, outputDirectory, baseDirectory.value, log)
 
-        f(inChanged)
-      }
+      val maxLastModified: () => Long =
+        () => unmanagedSrcs.foldRight[Long](0) { case (file, maxSoFar) => file.lastModified() max maxSoFar }
+
+      val execIfLastModifiedChanged: (() => Long) => List[File] =
+        Tracked.outputChanged(cacheDir / "classy-unmanaged-sources-last-modified") { (lastModifiedChanged: Boolean, lastModified: Long) =>
+          val execOrReturnCachedOutput: Unit => List[File] =
+            Tracked.lastOutput(cacheDir / "classy-generated-sources") { (_: Unit, prevOutput: Option[List[File]]) =>
+              if (lastModifiedChanged) {
+                execute
+              } else {
+                prevOutput.getOrElse(execute)
+              }
+            }
+
+          execOrReturnCachedOutput(())
+        }
+
+      execIfLastModifiedChanged(maxLastModified)
+    }
 
     gen((unmanagedSources in Compile).value.toList)
   }

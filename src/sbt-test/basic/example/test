@@ -1,4 +1,12 @@
+# Should generate the files before compilation
 > run
+# Should not re-generate them because no unmanaged sources have changed
 > run
 > clean
+# Should re-generate them now
+> run
+# Should not re-generate them because no unmanaged sources have changed
+> run
+$ touch src/main/scala/foo/Program.scala
+# Should regenerate them now because the last modified timestamp has changed
 > run
